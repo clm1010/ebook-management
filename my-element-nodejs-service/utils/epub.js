@@ -104,12 +104,14 @@ class EPub extends EventEmitter {
     try {
       this.zip = new ZipFile(this.filename)
     } catch (E) {
-      this.emit('error', new Error('Invalid/missing file'))
+      // this.emit('error', new Error('Invalid/missing file'))
+      this.emit('error', new Error('无效/丢失文件'))
       return
     }
 
     if (!this.zip.names || !this.zip.names.length) {
-      this.emit('error', new Error('No files in archive'))
+      // this.emit('error', new Error('No files in archive'))
+      this.emit('error', new Error('存档中没有文件'))
       return
     }
 
@@ -132,20 +134,23 @@ class EPub extends EventEmitter {
       }
     }
     if (!this.mimeFile) {
-      this.emit('error', new Error('No mimetype file in archive'))
+      // this.emit('error', new Error('No mimetype file in archive'))
+      this.emit('error', new Error('存档中没有 mime 类型文件'))
       return
     }
     this.zip.readFile(
       this.mimeFile,
       function (err, data) {
         if (err) {
-          this.emit('error', new Error('Reading archive failed'))
+          // this.emit('error', new Error('Reading archive failed'))
+          this.emit('error', new Error('读取存档失败'))
           return
         }
         var txt = data.toString('utf-8').toLowerCase().trim()
 
         if (txt != 'application/epub+zip') {
-          this.emit('error', new Error('Unsupported mime type'))
+          // this.emit('error', new Error('Unsupported mime type'))
+          this.emit('error', new Error('不支持的 mime 类型'))
           return
         }
 
@@ -170,7 +175,8 @@ class EPub extends EventEmitter {
       }
     }
     if (!this.containerFile) {
-      this.emit('error', new Error('No container file in archive'))
+      // this.emit('error', new Error('No container file in archive'))
+      this.emit('error', new Error('存档中没有容器文件'))
       return
     }
 
@@ -178,7 +184,8 @@ class EPub extends EventEmitter {
       this.containerFile,
       function (err, data) {
         if (err) {
-          this.emit('error', new Error('Reading archive failed'))
+          // this.emit('error', new Error('Reading archive failed'))
+          this.emit('error', new Error('读取存档失败'))
           return
         }
         var xml = data.toString('utf-8').toLowerCase().trim(),
@@ -188,7 +195,8 @@ class EPub extends EventEmitter {
           'end',
           function (result) {
             if (!result.rootfiles || !result.rootfiles.rootfile) {
-              this.emit('error', new Error('No rootfiles found'))
+              // this.emit('error', new Error('No rootfiles found'))
+              this.emit('error', new Error('没有找到根文件'))
               console.dir(result)
               return
             }
@@ -216,14 +224,16 @@ class EPub extends EventEmitter {
                   'application/oebps-package+xml' ||
                 !rootfile['@']['full-path']
               ) {
-                this.emit('error', new Error('Rootfile in unknown format'))
+                // this.emit('error', new Error('Rootfile in unknown format'))
+                this.emit('error', new Error('未知格式的根文件'))
                 return
               }
               filename = rootfile['@']['full-path'].toLowerCase().trim()
             }
 
             if (!filename) {
-              this.emit('error', new Error('Empty rootfile'))
+              // this.emit('error', new Error('Empty rootfile'))
+              this.emit('error', new Error('空的根文件'))
               return
             }
 
@@ -928,7 +938,14 @@ class EPub extends EventEmitter {
 
       this.getFile(id, callback)
     } else {
-      callback(new Error('File not found'))
+      const coverId = Object.keys(this.manifest).find(key => {
+        this.manifest[key].properties = 'cover-image'
+      })
+      if (coverId) {
+        this.getFile(coverId, callback)
+      } else {
+        callback(new Error('File not found'))
+      }
     }
   }
 

@@ -154,17 +154,52 @@ export default {
     return {
       loading: false,
       postForm: {
-        // status: 'draft' //draft deleted 状态
+        ebook_uri: ''
       },
-      labelWidth: '120px',
-      fileList: []
+      fileList: [],
+      labelWidth: '120px'
     }
   },
   methods: {
-    onUploadSuccess() {},
-    onUploadRemove() {},
-    showGuide() {
-      console.log('show guide')
+    setData(data) {
+      const {
+        title,
+        author,
+        publisher,
+        language,
+        rootFile,
+        cover,
+        url,
+        originalName,
+        contents,
+        fileName,
+        coverPath,
+        filePath,
+        unzipPath
+      } = data
+      this.postForm = {
+        ...this.postForm,
+        title,
+        author,
+        publisher,
+        language,
+        rootFile,
+        cover,
+        url,
+        originalName,
+        contents,
+        fileName,
+        coverPath,
+        filePath,
+        unzipPath
+      }
+    },
+    onUploadSuccess(data) {
+      console.log('onUploadSuccess', data)
+      this.setData(data)
+    },
+    onUploadRemove() {
+      console.log('onUploadRemove')
     },
     submitForm() {
       console.log('submitForm')
@@ -172,6 +207,9 @@ export default {
       setTimeout(() => {
         this.loading = false
       }, 1000)
+    },
+    showGuide() {
+      console.log('show guide...')
     }
   }
 }

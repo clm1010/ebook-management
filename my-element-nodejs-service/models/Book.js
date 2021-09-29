@@ -1,6 +1,7 @@
 const { MIME_TYPE_EPUB, UPLOAD_URL, UPLOAD_PATH } = require('../utils/constant')
 const fs = require('fs')
 const Epub = require('../utils/epub')
+const xml2js = require('xml2js').parseString
 
 class Book {
   constructor(file, data) {
@@ -11,7 +12,7 @@ class Book {
     }
   }
   createBookFromFile(file) {
-    console.log(file)
+    // console.log(file)
     const {
       destination,
       filename,
@@ -48,11 +49,11 @@ class Book {
     this.publisher = '' // 出版社
     this.contents = [] // 目录
     this.cover = '' // 封面图片URL
-    this.category = -1 // 分类ID
+    this.coverPath = '' // 封面图片路径    this.category = -1 // 分类ID
     this.categoryText = '' // 分类名称
     this.language = '' // 语种
     this.unzipUrl = unzipUrl // 解压后文件夹链接
-    this.originalname = originalname // 电子书文件的原名
+    this.originalName = originalname // 电子书文件的原名
   }
   createBookFromData(data) {
     console.log('createBookFromData', data)
@@ -71,12 +72,151 @@ class Book {
         if (err) {
           reject(err)
         } else {
-          console.log(epub.metadata)
-          resolve()
+          console.log('epub end', epub.manifest)
+          const {
+            language,
+            creator,
+            creatorFileAs,
+            title,
+            cover,
+            publisher
+          } = epub.metadata
+          if (!title) {
+            reject(new Error('图书标题为空'))
+          } else {
+            this.title = title
+            this.language = language || 'en'
+            this.author = creator || creatorFileAs || 'unknown'
+            this.publisher = publisher || 'unknown'
+            this.rootFile = epub.rootFile
+            const handleGetImage = (err, file, mimeType) => {
+              if (err) {
+                reject(err)
+              } else {
+                const suffix = mimeType.split('/')[1]
+                const coverPath = `${UPLOAD_PATH}/img/${this.filename}.${suffix}`
+                const coverUrl = `${UPLOAD_URL}/img/${this.filename}.${suffix}`
+                fs.writeFileSync(coverPath, file, 'binary')
+                this.coverPath = `/img/${this.filename}.${suffix}`
+                this.cover = coverUrl
+                resolve(this)
+              }
+            }
+            try {
+              this.unzip()
+              this.parseContents(epub).then(({ chapters }) => {
+                this.contents = chapters
+                epub.getImage(cover, handleGetImage)
+              })
+            } catch (e) {
+              reject(e)
+            }
+          }
         }
       })
       epub.parse()
     })
+  }
+
+  unzip() {
+    const AdmZip = require('adm-zip')
+    const zip = new AdmZip(Book.getPath(this.path))
+    zip.extractAllTo(Book.getPath(this.unzipPath), true)
+  }
+
+  parseContents(epub) {
+    function getNcxFilePath() {
+      const spine = epub && epub.spine
+      const manifest = epub && epub.manifest
+      const ncx = spine.toc && spine.toc.href
+      const id = spine.toc && spine.toc.id
+      console.log('spine', spine.toc, ncx, id, manifest[id].href)
+      if (ncx) {
+        return ncx
+      } else {
+        return manifest[id].href
+      }
+    }
+
+    function findParent(array, level = 0, pid = '') {
+      return array.map(item => {
+        item.level = level
+        item.pid = pid
+        if (item.navPoint && item.navPoint.length > 0) {
+          item.navPoint = findParent(item.navPoint, level + 1, item['$'].id)
+        } else if (item.navPoint) {
+          item.navPoint.level = level + 1
+          item.navPoint.pid = item['$'].id
+        }
+        return item
+      })
+    }
+
+    function flatten(array) {
+      return [].concat(...array.map(item => {
+        if (item.navPoint && item.navPoint.length > 0) {
+          return [].concat(item, ...flatten(item.navPoint))
+        } else if (item.navPoint) {
+          return [].concat(item, item.navPoint)
+        }
+        return item
+      }))
+    }
+
+    const ncxFilePath = Book.getPath(`${this.unzipPath}/${getNcxFilePath()}`)
+    console.log('ncxFilePath', ncxFilePath)
+    if (fs.existsSync(ncxFilePath)) {
+      return new Promise((resolve, reject) => {
+        const xml = fs.readFileSync(ncxFilePath, 'utf-8')
+        const fileName = this.fileName
+        xml2js(xml, {
+          explicitArray: false,
+          ignoreAttrs: false
+        }, function (err, json) {
+          if (err) {
+            reject(err)
+          } else {
+            const navMap = json.ncx.navMap
+            console.log('xml', navMap)
+            if (navMap.navPoint && navMap.navPoint.length > 0) {
+              navMap.navPoint = findParent(navMap.navPoint)
+              const newNavMap = flatten(navMap.navPoint)
+              const chapters = []
+              epub.flow.forEach((chapter, index) => {
+                if (index + 1 > newNavMap.length) {
+                  return
+                }
+                const nav = newNavMap[index]
+                chapter.text = `${UPLOAD_URL}/unzip/${fileName}/${chapter.href}`
+                if (nav && nav.navLabel) {
+                  chapter.label = nav.navLabel.text || ''
+                } else {
+                  chapter.label = ''
+                }
+                chapter.level = nav.level
+                chapter.pid = nav.pid
+                chapter.navId = nav['$'].id
+                chapter.fileName = fileName
+                chapter.order = index + 1
+                chapters.push(chapter)
+              })
+              resolve({ chapters })
+            } else {
+              reject(new Error('目录解析失败，目录数为0'))
+            }
+          }
+        })
+      })
+    } else {
+      throw new Error('目录文件不存在！')
+    }
+  }
+
+  static getPath(path) {
+    if (!path.startsWith('/')) {
+      path = `/${path}`
+    }
+    return `${UPLOAD_PATH}${path}`
   }
 }
 
